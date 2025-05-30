@@ -5,7 +5,7 @@ import re
 import time
 import json
 import random
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 # Configuração da página
 st.set_page_config(
@@ -65,6 +65,12 @@ st.markdown("""
         background-color: #F9FAFB;
         border-radius: 0.5rem;
     }
+    .exact-match {
+        background-color: #DCFCE7;
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -78,108 +84,8 @@ Insira o código da peça abaixo e clique em "Buscar Informações" para obter d
 preços, compatibilidade, dimensões e mais.
 """)
 
-# Banco de dados de peças pré-cadastradas (usado apenas como fallback)
-PECAS_CADASTRADAS = {
-    "628117709R": {
-        "nome": "Defletor Ar Esquerdo Radiador Renault Sandero/Logan",
-        "fabricante": "Renault",
-        "descricao": "DEFLETOR AR ESQUERDO RADIADOR RENAULT SANDERO LOGAN 2013 A 2021 - ORIGINAL",
-        "compatibilidade": [
-            "RENAULT SANDERO FASE 3 (2013-2021)",
-            "RENAULT LOGAN FASE 3 (2013-2021)",
-            "RENAULT SANDERO STEPWAY (2013-2021)"
-        ],
-        "preco_novo_min": 85.90,
-        "preco_novo_med": 110.50,
-        "preco_usado_min": 60.00,
-        "preco_usado_med": 75.30,
-        "preco_recond_min": 70.00,
-        "preco_recond_med": 85.00,
-        "dimensoes": {
-            "largura": 16,
-            "altura": 46,
-            "comprimento": 10,
-            "peso": 0.14
-        },
-        "ncm": "87082999",
-        "categoria_ml": "Defletores e Grades",
-        "imagem_url": "https://http2.mlstatic.com/D_NQ_NP_2X_686168-MLB53641212512_022023-F.webp",
-        "fonte": "Cadastro interno"
-    },
-    "92404M4000": {
-        "nome": "Lanterna Traseira Direita Hyundai Creta",
-        "fabricante": "Hyundai",
-        "descricao": "LANTERNA TRASEIRA DIREITA HYUNDAI CRETA 2017 A 2021 - ORIGINAL",
-        "compatibilidade": [
-            "HYUNDAI CRETA (2017-2021)"
-        ],
-        "preco_novo_min": 450.00,
-        "preco_novo_med": 580.50,
-        "preco_usado_min": 320.00,
-        "preco_usado_med": 390.30,
-        "preco_recond_min": 380.00,
-        "preco_recond_med": 420.00,
-        "dimensoes": {
-            "largura": 25,
-            "altura": 40,
-            "comprimento": 15,
-            "peso": 0.85
-        },
-        "ncm": "85122022",
-        "categoria_ml": "Lanternas Traseiras",
-        "imagem_url": "https://http2.mlstatic.com/D_NQ_NP_2X_745344-MLB49110758207_022022-F.webp",
-        "fonte": "Cadastro interno"
-    },
-    "751277663R": {
-        "nome": "Longarina Dianteira Esquerda Renault",
-        "fabricante": "Renault",
-        "descricao": "LONGARINA DIANTEIRA ESQUERDA RENAULT SANDERO LOGAN 2014 A 2021 - ORIGINAL",
-        "compatibilidade": [
-            "RENAULT SANDERO (2014-2021)",
-            "RENAULT LOGAN (2014-2021)"
-        ],
-        "preco_novo_min": 780.00,
-        "preco_novo_med": 950.50,
-        "preco_usado_min": 450.00,
-        "preco_usado_med": 580.30,
-        "preco_recond_min": 580.00,
-        "preco_recond_med": 680.00,
-        "dimensoes": {
-            "largura": 30,
-            "altura": 25,
-            "comprimento": 120,
-            "peso": 4.5
-        },
-        "ncm": "87082999",
-        "categoria_ml": "Longarinas",
-        "imagem_url": "https://http2.mlstatic.com/D_NQ_NP_2X_841249-MLB31841198401_082019-F.webp",
-        "fonte": "Cadastro interno"
-    },
-    "852213BA0A": {
-        "nome": "Suporte Guia Parachoque Traseiro Esquerdo Nissan Versa",
-        "fabricante": "Nissan",
-        "descricao": "SUPORTE GUIA PARACHOQUE TRASEIRO ESQUERDO NISSAN VERSA 2011 A 2019 - ORIGINAL",
-        "compatibilidade": [
-            "NISSAN VERSA (2011-2019)",
-            "NISSAN MARCH (2011-2019)"
-        ],
-        "preco_novo_min": 120.00,
-        "preco_novo_med": 180.50,
-        "preco_usado_min": 80.00,
-        "preco_usado_med": 110.30,
-        "preco_recond_min": 95.00,
-        "preco_recond_med": 130.00,
-        "dimensoes": {
-            "largura": 15,
-            "altura": 10,
-            "comprimento": 25,
-            "peso": 0.35
-        },
-        "ncm": "87082999",
-        "categoria_ml": "Parachoques",
-        "imagem_url": "https://http2.mlstatic.com/D_NQ_NP_2X_991721-MLB43736719278_102020-F.webp",
-        "fonte": "Cadastro interno"
-    },
+# Cache de peças já pesquisadas e validadas
+CACHE_PECAS = {
     "LR006225": {
         "nome": "Travessa Dianteira Inferior Land Rover Freelander 2",
         "fabricante": "Land Rover",
@@ -204,12 +110,53 @@ PECAS_CADASTRADAS = {
         "ncm": "87082999",
         "categoria_ml": "Travessas e Crossmembers",
         "imagem_url": "https://http2.mlstatic.com/D_NQ_NP_2X_628111-MLB31002253028_062019-F.webp",
-        "fonte": "Cadastro interno (corrigido)"
+        "fonte": "Cache validado"
+    },
+    "852213BA0A": {
+        "nome": "Suporte Guia Parachoque Traseiro Esquerdo Nissan Versa",
+        "fabricante": "Nissan",
+        "descricao": "SUPORTE GUIA PARACHOQUE TRASEIRO ESQUERDO NISSAN VERSA 2011 A 2019 - ORIGINAL",
+        "compatibilidade": [
+            "NISSAN VERSA (2011-2019)",
+            "NISSAN MARCH (2011-2019)"
+        ],
+        "preco_novo_min": 120.00,
+        "preco_novo_med": 180.50,
+        "preco_usado_min": 80.00,
+        "preco_usado_med": 110.30,
+        "preco_recond_min": 95.00,
+        "preco_recond_med": 130.00,
+        "dimensoes": {
+            "largura": 15,
+            "altura": 10,
+            "comprimento": 25,
+            "peso": 0.35
+        },
+        "ncm": "87082999",
+        "categoria_ml": "Parachoques",
+        "imagem_url": "https://http2.mlstatic.com/D_NQ_NP_2X_991721-MLB43736719278_102020-F.webp",
+        "fonte": "Cache validado"
     }
 }
 
+# Lista de sites confiáveis para priorizar na busca
+SITES_CONFIAVEIS = [
+    "mercadolivre.com.br",
+    "shopee.com.br",
+    "pecaagora.com.br",
+    "autopecaonline.com.br",
+    "pecasautomotivas.com.br",
+    "buscapecas.com.br",
+    "jaguarlandroverclassic.com",
+    "britcar.com",
+    "autodoc.com.br",
+    "pecas.com.br",
+    "pecauto.com.br",
+    "webpecas.com.br"
+]
+
 # Função para buscar no Google
-def buscar_google(query, num_results=15):
+def buscar_google(query, num_results=20):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -230,17 +177,26 @@ def buscar_google(query, num_results=15):
                 snippet = snippet_elem.text if snippet_elem else "Sem descrição"
                 link = anchor['href']
                 
+                # Verificar se é um site confiável
+                domain = urlparse(link).netloc
+                confiavel = any(site in domain for site in SITES_CONFIAVEIS)
+                
                 resultados.append({
                     "titulo": title,
                     "snippet": snippet,
-                    "link": link
+                    "link": link,
+                    "confiavel": confiavel,
+                    "domain": domain
                 })
+        
+        # Ordenar resultados: sites confiáveis primeiro
+        resultados.sort(key=lambda x: (not x["confiavel"]))
         
         return resultados
     except Exception as e:
         return []
 
-# Função para buscar informações no Mercado Livre
+# Função para buscar no Mercado Livre
 def buscar_mercado_livre(codigo_peca):
     try:
         url = f"https://lista.mercadolivre.com.br/{codigo_peca}"
@@ -264,57 +220,208 @@ def buscar_mercado_livre(codigo_peca):
                 preco = float(preco_elem.text.replace('.', '').replace(',', '.')) if preco_elem else 0
                 link = link_elem['href'] if link_elem else None
                 
+                # Verificar se o código está no título
+                relevancia = 5 if codigo_peca.upper() in titulo.upper() else 1
+                
                 resultados.append({
                     "titulo": titulo,
                     "preco": preco,
-                    "link": link
+                    "link": link,
+                    "relevancia": relevancia
                 })
             except Exception as e:
                 continue
+        
+        # Ordenar por relevância
+        resultados.sort(key=lambda x: x["relevancia"], reverse=True)
         
         return resultados
     except Exception as e:
         return []
 
-# Função para buscar em sites especializados de autopeças
-def buscar_sites_especializados(codigo_peca):
-    sites = [
-        f"https://www.pecaagora.com.br/busca?q={codigo_peca}",
-        f"https://www.autopecaonline.com.br/busca?q={codigo_peca}",
-        f"https://www.pecasautomotivas.com/busca?q={codigo_peca}",
-        f"https://www.buscapecas.com.br/busca?q={codigo_peca}"
-    ]
-    
-    resultados = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
-    
-    for site in sites:
-        try:
-            response = requests.get(site, headers=headers, timeout=5)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Extrair título da página
-            titulo_pagina = soup.title.text if soup.title else ""
-            
-            # Extrair texto relevante
-            texto_relevante = ""
-            for tag in soup.find_all(['h1', 'h2', 'h3', 'p']):
-                if codigo_peca.upper() in tag.text.upper():
-                    texto_relevante += tag.text + " "
-            
-            if texto_relevante or codigo_peca.upper() in titulo_pagina.upper():
+# Função para buscar na Shopee
+def buscar_shopee(codigo_peca):
+    try:
+        url = f"https://shopee.com.br/search?keyword={codigo_peca}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Tentar extrair informações
+        resultados = []
+        items = soup.select('.shopee-search-item-result__item')
+        
+        for item in items[:5]:  # Limitar a 5 resultados
+            try:
+                titulo_elem = item.select_one('.shopee-item-card__text-name')
+                preco_elem = item.select_one('.shopee-item-card__current-price')
+                link_elem = item.find('a')
+                
+                titulo = titulo_elem.text if titulo_elem else "Não disponível"
+                
+                # Extrair preço (formato pode variar)
+                preco = 0
+                if preco_elem:
+                    preco_text = preco_elem.text.replace('R$', '').strip()
+                    try:
+                        preco = float(preco_text.replace('.', '').replace(',', '.'))
+                    except:
+                        pass
+                
+                # Construir link completo
+                link = None
+                if link_elem and link_elem.get('href'):
+                    href = link_elem['href']
+                    if href.startswith('/'):
+                        link = f"https://shopee.com.br{href}"
+                    else:
+                        link = href
+                
+                # Verificar se o código está no título
+                relevancia = 5 if codigo_peca.upper() in titulo.upper() else 1
+                
                 resultados.append({
-                    "site": site,
-                    "titulo": titulo_pagina,
-                    "texto": texto_relevante,
-                    "url": site
+                    "titulo": titulo,
+                    "preco": preco,
+                    "link": link,
+                    "relevancia": relevancia
                 })
-        except Exception as e:
-            continue
+            except Exception as e:
+                continue
+        
+        # Ordenar por relevância
+        resultados.sort(key=lambda x: x["relevancia"], reverse=True)
+        
+        return resultados
+    except Exception as e:
+        return []
+
+# Função para extrair o nome exato da peça a partir dos resultados
+def extrair_nome_exato_peca(resultados_google, resultados_ml, resultados_shopee, codigo_peca):
+    candidatos = []
     
-    return resultados
+    # Processar resultados do Mercado Livre (alta prioridade)
+    for resultado in resultados_ml:
+        titulo = resultado.get("titulo", "")
+        if codigo_peca.upper() in titulo.upper():
+            # Limpar o título
+            titulo_limpo = re.sub(r'\b' + re.escape(codigo_peca) + r'\b', '', titulo, flags=re.IGNORECASE).strip()
+            titulo_limpo = re.sub(r'^\W+|\W+$', '', titulo_limpo).strip()  # Remover pontuação no início/fim
+            
+            if len(titulo_limpo) > 10:  # Garantir que não seja muito curto
+                candidatos.append({
+                    "nome": titulo_limpo,
+                    "pontuacao": 10,
+                    "fonte": "Mercado Livre",
+                    "url": resultado.get("link", "")
+                })
+    
+    # Processar resultados da Shopee
+    for resultado in resultados_shopee:
+        titulo = resultado.get("titulo", "")
+        if codigo_peca.upper() in titulo.upper():
+            # Limpar o título
+            titulo_limpo = re.sub(r'\b' + re.escape(codigo_peca) + r'\b', '', titulo, flags=re.IGNORECASE).strip()
+            titulo_limpo = re.sub(r'^\W+|\W+$', '', titulo_limpo).strip()  # Remover pontuação no início/fim
+            
+            if len(titulo_limpo) > 10:  # Garantir que não seja muito curto
+                candidatos.append({
+                    "nome": titulo_limpo,
+                    "pontuacao": 8,
+                    "fonte": "Shopee",
+                    "url": resultado.get("link", "")
+                })
+    
+    # Processar resultados do Google
+    for resultado in resultados_google:
+        titulo = resultado.get("titulo", "")
+        snippet = resultado.get("snippet", "")
+        domain = resultado.get("domain", "")
+        
+        # Verificar se o código está no título ou snippet
+        if codigo_peca.upper() in titulo.upper() or codigo_peca.upper() in snippet.upper():
+            # Extrair do título
+            if codigo_peca.upper() in titulo.upper():
+                # Limpar o título
+                titulo_limpo = re.sub(r'\b' + re.escape(codigo_peca) + r'\b', '', titulo, flags=re.IGNORECASE).strip()
+                titulo_limpo = re.sub(r'^\W+|\W+$', '', titulo_limpo).strip()  # Remover pontuação no início/fim
+                
+                if len(titulo_limpo) > 10:  # Garantir que não seja muito curto
+                    pontuacao_base = 7
+                    
+                    # Aumentar pontuação para sites confiáveis
+                    if resultado.get("confiavel", False):
+                        pontuacao_base += 3
+                    
+                    candidatos.append({
+                        "nome": titulo_limpo,
+                        "pontuacao": pontuacao_base,
+                        "fonte": f"Google ({domain})",
+                        "url": resultado.get("link", "")
+                    })
+            
+            # Extrair do snippet
+            match_snippet = re.search(r'([^.,:;]+' + re.escape(codigo_peca) + r'[^.,:;]+)', snippet, re.IGNORECASE)
+            if match_snippet:
+                snippet_text = match_snippet.group(1).strip()
+                # Limpar o snippet
+                snippet_limpo = re.sub(r'\b' + re.escape(codigo_peca) + r'\b', '', snippet_text, flags=re.IGNORECASE).strip()
+                snippet_limpo = re.sub(r'^\W+|\W+$', '', snippet_limpo).strip()  # Remover pontuação no início/fim
+                
+                if len(snippet_limpo) > 10:  # Garantir que não seja muito curto
+                    pontuacao_base = 5
+                    
+                    # Aumentar pontuação para sites confiáveis
+                    if resultado.get("confiavel", False):
+                        pontuacao_base += 2
+                    
+                    candidatos.append({
+                        "nome": snippet_limpo,
+                        "pontuacao": pontuacao_base,
+                        "fonte": f"Google Snippet ({domain})",
+                        "url": resultado.get("link", "")
+                    })
+    
+    # Pontuar os candidatos
+    for candidato in candidatos:
+        nome = candidato["nome"].lower()
+        
+        # Adicionar pontos para nomes mais específicos
+        if re.search(r'(travessa|suporte|defletor|lanterna|filtro|longarina|parachoque|crossmember)', nome):
+            candidato["pontuacao"] += 3
+        
+        # Adicionar pontos para nomes com fabricante
+        if re.search(r'(renault|fiat|volkswagen|vw|chevrolet|gm|ford|toyota|honda|hyundai|kia|nissan|land rover)', nome):
+            candidato["pontuacao"] += 2
+        
+        # Adicionar pontos para nomes com "original"
+        if "original" in nome:
+            candidato["pontuacao"] += 1
+        
+        # Penalizar nomes muito longos
+        if len(nome) > 100:
+            candidato["pontuacao"] -= 2
+    
+    # Ordenar por pontuação
+    candidatos.sort(key=lambda x: x["pontuacao"], reverse=True)
+    
+    # Retornar o melhor candidato e a lista completa para debug
+    if candidatos:
+        return {
+            "nome": candidatos[0]["nome"],
+            "fonte": candidatos[0]["fonte"],
+            "url": candidatos[0]["url"],
+            "todos_candidatos": candidatos[:5]  # Retornar os 5 melhores para debug
+        }
+    else:
+        return {
+            "nome": None,
+            "fonte": None,
+            "url": None,
+            "todos_candidatos": []
+        }
 
 # Função para extrair fabricante do código com base em padrões conhecidos
 def extrair_fabricante_por_padrao(codigo_peca):
@@ -322,7 +429,7 @@ def extrair_fabricante_por_padrao(codigo_peca):
     
     # Land Rover / Jaguar
     if codigo_upper.startswith("LR") or codigo_upper.startswith("JLR"):
-        return "Land Rover/Jaguar"
+        return "Land Rover"
     
     # Nissan
     if re.match(r'^[0-9]{6}[A-Z]{2}[0-9]?[A-Z]?$', codigo_upper):
@@ -543,123 +650,6 @@ def extrair_informacoes_site(url, codigo_peca):
             "url": url
         }
 
-# Função para pontuar e selecionar a melhor informação
-def pontuar_resultados(resultados, codigo_peca):
-    pontuacoes = []
-    
-    for i, resultado in enumerate(resultados):
-        pontuacao = 0
-        
-        # Pontuação por presença do código
-        if codigo_peca.upper() in resultado.get("titulo", "").upper():
-            pontuacao += 10
-        if codigo_peca.upper() in resultado.get("descricao", "").upper():
-            pontuacao += 5
-        if codigo_peca.upper() in resultado.get("texto_relevante", "").upper():
-            pontuacao += 3
-        
-        # Pontuação por completude
-        if resultado.get("preco"):
-            pontuacao += 2
-        if resultado.get("compatibilidade"):
-            pontuacao += len(resultado.get("compatibilidade")) * 1.5
-        if resultado.get("dimensoes"):
-            pontuacao += len(resultado.get("dimensoes")) * 2
-        
-        # Pontuação por fonte confiável
-        url = resultado.get("url", "").lower()
-        if "mercadolivre" in url:
-            pontuacao += 3
-        if any(site in url for site in ["pecaagora", "autopecaonline", "pecasautomotivas", "buscapecas"]):
-            pontuacao += 5
-        if ".com.br" in url:
-            pontuacao += 1
-        
-        pontuacoes.append((i, pontuacao))
-    
-    # Ordenar por pontuação
-    pontuacoes.sort(key=lambda x: x[1], reverse=True)
-    
-    if pontuacoes:
-        melhor_indice = pontuacoes[0][0]
-        return resultados[melhor_indice]
-    else:
-        return None
-
-# Função para extrair nome da peça dos resultados do Google
-def extrair_nome_peca_google(resultados_google, codigo_peca):
-    nomes_candidatos = []
-    
-    for resultado in resultados_google:
-        titulo = resultado.get("titulo", "")
-        snippet = resultado.get("snippet", "")
-        
-        # Verificar se o código está no título ou snippet
-        if codigo_peca.upper() in titulo.upper() or codigo_peca.upper() in snippet.upper():
-            # Tentar extrair nome da peça do título
-            titulo_limpo = re.sub(r'\s*-\s*.*$', '', titulo)  # Remover tudo após o primeiro "-"
-            if len(titulo_limpo) > 10:  # Garantir que não seja muito curto
-                nomes_candidatos.append({"nome": titulo_limpo, "pontuacao": 5})
-            
-            # Tentar extrair do snippet
-            match_snippet = re.search(r'([^.,:;]+' + re.escape(codigo_peca) + r'[^.,:;]+)', snippet, re.IGNORECASE)
-            if match_snippet:
-                nomes_candidatos.append({"nome": match_snippet.group(1).strip(), "pontuacao": 3})
-    
-    # Pontuar os candidatos
-    for candidato in nomes_candidatos:
-        # Adicionar pontos para nomes mais específicos
-        if re.search(r'(travessa|suporte|defletor|lanterna|filtro|longarina)', candidato["nome"], re.IGNORECASE):
-            candidato["pontuacao"] += 3
-        
-        # Adicionar pontos para nomes com fabricante
-        if re.search(r'(renault|fiat|volkswagen|vw|chevrolet|gm|ford|toyota|honda|hyundai|kia|nissan|land rover)', 
-                    candidato["nome"], re.IGNORECASE):
-            candidato["pontuacao"] += 2
-    
-    # Ordenar por pontuação
-    nomes_candidatos.sort(key=lambda x: x["pontuacao"], reverse=True)
-    
-    if nomes_candidatos:
-        return nomes_candidatos[0]["nome"]
-    else:
-        return None
-
-# Função para validar informações com múltiplas fontes
-def validar_informacoes(info_peca, resultados_google, codigo_peca):
-    # Verificar se o nome da peça é consistente com os resultados do Google
-    nome_google = extrair_nome_peca_google(resultados_google, codigo_peca)
-    
-    if nome_google:
-        # Verificar se há discrepância significativa entre o nome atual e o nome do Google
-        nome_atual = info_peca.get("nome", "")
-        
-        # Verificar se o nome atual contém palavras-chave incorretas
-        palavras_incorretas = {
-            "filtro": ["travessa", "suporte", "reforço", "crossmember"],
-            "travessa": ["filtro", "lanterna", "farol"],
-            "lanterna": ["travessa", "filtro", "suporte"],
-            "suporte": ["filtro", "lanterna"]
-        }
-        
-        for palavra_atual, palavras_conflitantes in palavras_incorretas.items():
-            if palavra_atual.lower() in nome_atual.lower():
-                for palavra_conflitante in palavras_conflitantes:
-                    if palavra_conflitante.lower() in nome_google.lower():
-                        # Há conflito, usar o nome do Google
-                        info_peca["nome"] = nome_google
-                        info_peca["fonte"] = "Google Search (validação cruzada)"
-                        
-                        # Atualizar categoria com base no novo nome
-                        categoria = extrair_categoria(nome_google)
-                        if categoria:
-                            info_peca["categoria_ml"] = categoria
-                            info_peca["ncm"] = obter_ncm_por_categoria(categoria)
-                        
-                        break
-    
-    return info_peca
-
 # Função para buscar informações da peça
 def buscar_informacoes_peca(codigo_peca):
     # Limpar a sessão para garantir que não haja dados de buscas anteriores
@@ -674,47 +664,70 @@ def buscar_informacoes_peca(codigo_peca):
     status_text.text("Iniciando busca...")
     progress_bar.progress(10)
     
+    # Verificar se o código está no cache de peças validadas (alta prioridade)
+    codigo_normalizado = codigo_peca.upper()
+    if codigo_normalizado in CACHE_PECAS:
+        # Finalizar
+        status_text.text("Peça encontrada no cache validado!")
+        progress_bar.progress(100)
+        time.sleep(0.3)
+        status_text.empty()
+        progress_bar.empty()
+        return CACHE_PECAS[codigo_normalizado]
+    
     # Buscar no Google primeiro (prioridade máxima)
     status_text.text("Buscando informações no Google...")
-    progress_bar.progress(20)
-    resultados_google = buscar_google(f"peça automotiva {codigo_peca} especificações detalhes", 15)
+    progress_bar.progress(15)
+    resultados_google = buscar_google(f"{codigo_peca} peça automotiva nome exato", 20)
+    
+    # Buscar no Mercado Livre (alta prioridade)
+    status_text.text("Buscando no Mercado Livre...")
+    progress_bar.progress(25)
+    resultados_ml = buscar_mercado_livre(codigo_peca)
+    
+    # Buscar na Shopee
+    status_text.text("Buscando na Shopee...")
+    progress_bar.progress(35)
+    resultados_shopee = buscar_shopee(codigo_peca)
+    
+    # Extrair o nome exato da peça
+    status_text.text("Extraindo nome exato da peça...")
+    progress_bar.progress(45)
+    info_nome_exato = extrair_nome_exato_peca(resultados_google, resultados_ml, resultados_shopee, codigo_peca)
     
     # Mostrar os resultados do Google para debug
     resultados_debug = []
     for i, resultado in enumerate(resultados_google[:5]):
         resultados_debug.append(f"{i+1}. {resultado.get('titulo', 'Sem título')} - {resultado.get('snippet', 'Sem descrição')[:100]}...")
     
-    # Buscar no Mercado Livre
-    status_text.text("Buscando no Mercado Livre...")
-    progress_bar.progress(30)
-    resultados_ml = buscar_mercado_livre(codigo_peca)
-    
-    # Buscar em sites especializados
-    status_text.text("Consultando sites especializados de autopeças...")
-    progress_bar.progress(40)
-    resultados_sites = buscar_sites_especializados(codigo_peca)
-    
     # Extrair informações detalhadas dos melhores resultados
     status_text.text("Extraindo informações detalhadas...")
-    progress_bar.progress(50)
+    progress_bar.progress(55)
     
     # Coletar URLs para análise detalhada
     urls_para_analise = []
     
-    # Adicionar URLs do Google (prioridade máxima)
-    for resultado in resultados_google[:5]:
-        if "link" in resultado and resultado["link"]:
-            urls_para_analise.append(resultado["link"])
-    
-    # Adicionar URLs do Mercado Livre
+    # Adicionar URLs do Mercado Livre (alta prioridade)
     for resultado in resultados_ml[:3]:
         if "link" in resultado and resultado["link"]:
             urls_para_analise.append(resultado["link"])
     
-    # Adicionar URLs de sites especializados
-    for resultado in resultados_sites:
-        if "url" in resultado and resultado["url"]:
-            urls_para_analise.append(resultado["url"])
+    # Adicionar URLs da Shopee
+    for resultado in resultados_shopee[:2]:
+        if "link" in resultado and resultado["link"]:
+            urls_para_analise.append(resultado["link"])
+    
+    # Adicionar URLs do Google (priorizar sites confiáveis)
+    for resultado in resultados_google:
+        if "link" in resultado and resultado["link"] and resultado.get("confiavel", False):
+            urls_para_analise.append(resultado["link"])
+    
+    # Adicionar mais alguns resultados do Google não confiáveis
+    for resultado in resultados_google:
+        if "link" in resultado and resultado["link"] and not resultado.get("confiavel", False):
+            urls_para_analise.append(resultado["link"])
+            if len(urls_para_analise) >= 10:  # Limitar a 10 URLs no total
+                break
     
     # Remover duplicatas
     urls_para_analise = list(set(urls_para_analise))
@@ -725,73 +738,73 @@ def buscar_informacoes_peca(codigo_peca):
     
     for i, url in enumerate(urls_para_analise):
         status_text.text(f"Analisando site {i+1} de {total_urls}...")
-        progress_bar.progress(50 + int((i / total_urls) * 30))
+        progress_bar.progress(55 + int((i / total_urls) * 25))
         info = extrair_informacoes_site(url, codigo_peca)
         informacoes_detalhadas.append(info)
     
     # Processar e consolidar resultados
-    status_text.text("Processando e selecionando as melhores informações...")
+    status_text.text("Processando e consolidando informações...")
     progress_bar.progress(80)
     
-    # Selecionar a melhor informação
-    melhor_info = pontuar_resultados(informacoes_detalhadas, codigo_peca)
+    # Usar o nome exato da peça se disponível
+    nome_peca = info_nome_exato.get("nome")
+    fonte_info = info_nome_exato.get("fonte")
+    url_fonte = info_nome_exato.get("url")
+    candidatos_nome = info_nome_exato.get("todos_candidatos", [])
     
-    # Extrair informações dos resultados do Google e Mercado Livre
-    nome_peca = None
+    # Se não encontrou nome exato, tentar extrair de outras fontes
+    if not nome_peca:
+        for info in informacoes_detalhadas:
+            titulo = info.get("titulo", "")
+            if codigo_peca.upper() in titulo.upper():
+                nome_peca = titulo.split(" - ")[0].strip()
+                fonte_info = "Site especializado"
+                url_fonte = info.get("url", "")
+                break
+    
+    # Se ainda não encontrou, usar um nome genérico
+    if not nome_peca:
+        nome_peca = f"Peça automotiva {codigo_peca}"
+        fonte_info = "Busca online"
+    
+    # Extrair fabricante
     fabricante = None
-    categoria = None
-    precos = []
-    fonte_info = "Busca online"
-    url_fonte = ""
     
-    # Usar a melhor informação se disponível
-    if melhor_info:
-        nome_peca = melhor_info.get("titulo", "").split(" - ")[0].strip()
-        url_fonte = melhor_info.get("url", "")
-        
-        if melhor_info.get("preco"):
-            precos.append(melhor_info["preco"])
-    
-    # Extrair nome da peça diretamente dos resultados do Google (alta prioridade)
-    nome_google = extrair_nome_peca_google(resultados_google, codigo_peca)
-    if nome_google:
-        nome_peca = nome_google
-        fonte_info = "Google Search"
-    
-    # Processar resultados do Mercado Livre para preços
-    if resultados_ml:
-        for resultado in resultados_ml:
-            if "preco" in resultado:
-                precos.append(resultado["preco"])
-            
-            if not nome_peca and "titulo" in resultado:
-                nome_peca = resultado["titulo"]
-                
-                # Tentar extrair fabricante do título
-                if not fabricante:
-                    fabricante = extrair_fabricante_do_titulo(nome_peca)
-                
-                # Tentar extrair categoria do título
-                if not categoria:
-                    categoria = extrair_categoria(nome_peca)
+    # Tentar extrair fabricante do nome da peça
+    if nome_peca:
+        fabricante = extrair_fabricante_do_titulo(nome_peca)
     
     # Tentar identificar fabricante pelo padrão do código
-    fabricante_por_padrao = extrair_fabricante_por_padrao(codigo_peca)
-    
-    # Usar fabricante identificado pelo padrão se não encontrou pelo título
-    if not fabricante and fabricante_por_padrao:
-        fabricante = fabricante_por_padrao
+    if not fabricante:
+        fabricante_por_padrao = extrair_fabricante_por_padrao(codigo_peca)
+        if fabricante_por_padrao:
+            fabricante = fabricante_por_padrao
     
     # Se ainda não tiver fabricante, usar um genérico
     if not fabricante:
         fabricante = "Não identificado"
     
-    # Se ainda não tiver categoria, tentar extrair do nome ou usar genérica
-    if not categoria and nome_peca:
+    # Extrair categoria
+    categoria = None
+    if nome_peca:
         categoria = extrair_categoria(nome_peca)
     
     if not categoria:
         categoria = "Peças Automotivas"
+    
+    # Extrair preços
+    precos = []
+    for resultado in resultados_ml:
+        if "preco" in resultado and resultado["preco"] > 0:
+            precos.append(resultado["preco"])
+    
+    for resultado in resultados_shopee:
+        if "preco" in resultado and resultado["preco"] > 0:
+            precos.append(resultado["preco"])
+    
+    for info in informacoes_detalhadas:
+        if info.get("preco") and info.get("preco") > 0:
+            precos.append(info["preco"])
     
     # Calcular preços se houver dados
     if precos:
@@ -814,17 +827,17 @@ def buscar_informacoes_peca(codigo_peca):
         
         preco_min = round(preco_medio * 0.8, 2)
     
-    # Construir nome da peça se não foi encontrado
-    if not nome_peca:
-        nome_peca = f"Peça {categoria} {fabricante} (Código: {codigo_peca})"
-    
     # Obter NCM com base na categoria
     ncm = obter_ncm_por_categoria(categoria)
     
     # Extrair compatibilidade
     compatibilidade = []
-    if melhor_info and melhor_info.get("compatibilidade"):
-        compatibilidade = melhor_info["compatibilidade"][:3]  # Limitar a 3 itens
+    for info in informacoes_detalhadas:
+        if info.get("compatibilidade"):
+            compatibilidade.extend(info["compatibilidade"])
+    
+    # Remover duplicatas e limitar a 5 itens
+    compatibilidade = list(set(compatibilidade))[:5]
     
     # Gerar compatibilidade baseada no fabricante se não encontrou
     if not compatibilidade:
@@ -838,8 +851,11 @@ def buscar_informacoes_peca(codigo_peca):
     
     # Extrair dimensões
     dimensoes = {}
-    if melhor_info and melhor_info.get("dimensoes"):
-        dimensoes = melhor_info["dimensoes"]
+    for info in informacoes_detalhadas:
+        if info.get("dimensoes"):
+            for key, value in info["dimensoes"].items():
+                if key not in dimensoes:
+                    dimensoes[key] = value
     
     # Gerar dimensões se não encontrou
     if not dimensoes:
@@ -852,14 +868,19 @@ def buscar_informacoes_peca(codigo_peca):
     
     # Extrair imagem
     imagem_url = None
-    if melhor_info and melhor_info.get("imagem_url"):
-        imagem_url = melhor_info["imagem_url"]
+    for info in informacoes_detalhadas:
+        if info.get("imagem_url"):
+            imagem_url = info["imagem_url"]
+            break
+    
+    # Construir descrição
+    descricao = f"{nome_peca.upper()} - CÓDIGO {codigo_peca} - {fabricante.upper()}"
     
     # Construir objeto de informações da peça
     info_peca = {
         "nome": nome_peca,
         "fabricante": fabricante,
-        "descricao": f"PEÇA AUTOMOTIVA - CÓDIGO {codigo_peca} - {categoria.upper()}",
+        "descricao": descricao,
         "compatibilidade": compatibilidade,
         "preco_novo_min": preco_min,
         "preco_novo_med": preco_medio,
@@ -873,26 +894,9 @@ def buscar_informacoes_peca(codigo_peca):
         "imagem_url": imagem_url,
         "fonte": fonte_info,
         "url_fonte": url_fonte,
-        "resultados_debug": resultados_debug
+        "resultados_debug": resultados_debug,
+        "candidatos_nome": candidatos_nome
     }
-    
-    # Validar informações com múltiplas fontes
-    info_peca = validar_informacoes(info_peca, resultados_google, codigo_peca)
-    
-    # Verificar se o código está no banco de dados (usado apenas como fallback)
-    codigo_normalizado = codigo_peca.upper()
-    for key, value in PECAS_CADASTRADAS.items():
-        if key.upper() == codigo_normalizado:
-            # Comparar a qualidade das informações
-            if fonte_info == "Google Search" or len(nome_peca) > 15:
-                # As informações online são boas, não usar o banco de dados
-                break
-            else:
-                # As informações online são insuficientes, usar o banco de dados como fallback
-                status_text.text("Usando informações do banco de dados como fallback...")
-                progress_bar.progress(90)
-                info_peca = value
-                break
     
     # Finalizar
     status_text.text("Busca concluída!")
@@ -985,6 +989,14 @@ if submit_button and codigo_peca:
             with col_dim4:
                 st.metric("Peso", f"{info_peca['dimensoes'].get('peso', 'N/A')} kg")
             st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Candidatos de nome (para debug)
+            if 'candidatos_nome' in info_peca and info_peca['candidatos_nome'] and st.checkbox("Mostrar candidatos de nome"):
+                st.markdown('<div class="search-results">', unsafe_allow_html=True)
+                st.markdown("### Candidatos de nome da peça:")
+                for candidato in info_peca['candidatos_nome']:
+                    st.markdown(f"- **{candidato['nome']}** (Pontuação: {candidato['pontuacao']}, Fonte: {candidato['fonte']})")
+                st.markdown('</div>', unsafe_allow_html=True)
             
             # Resultados do Google (para debug)
             if 'resultados_debug' in info_peca and st.checkbox("Mostrar resultados da busca no Google"):
